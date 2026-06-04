@@ -1,0 +1,863 @@
+external_components:
+  # - source:
+  #     type: git
+  #     url: https://github.com/open-lcc/esphome-lcc-bianca-component
+# Acaia is successfully enabled and correctly indented
+  # - source:
+  #     type: git
+  #     url: https://github.com/open-lcc/esphome-acaia-component
+# Using our fixed, local Acaia component
+  - source:
+      type: local
+      path: custom_components
+# Uncomment if using Pressensor
+#  - source:
+#      type: git
+#      url: https://github.com/open-lcc/esphome-pressensor-component
+#  - source:
+#      type: git
+#      url: https://github.com/open-lcc/esphome-st7789v-fast
+# Adding the following component will make your firmware GPL Licensed
+#  - source:
+#      type: git
+#      url: https://github.com/open-lcc/esphome-st7789v-fast
+#  - source:
+#      type: git
+#      url: https://github.com/oxan/esphome-stream-server
+#    components: [ stream_server ]
+
+esphome:
+  project:
+    name: open-lcc.bianca
+    version: 0.0.1
+  name: coffee-machine-open-lcc
+  name_add_mac_suffix: true
+  platformio_options:
+    build_flags:
+      - -O2
+    build_unflags:
+      - -Os
+      - -Werror=all
+    board_build.flash_mode: dio
+    board_build.partitions: "/config/esphome/custom_partitions.csv"
+
+#  on_boot:
+#    priority: -100
+#    then:
+#      - switch.turn_on: backlight_sw
+#      - display.page.show: page_main
+
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_ESP_TLS_INSECURE: y
+      CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY: y
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+wifi:
+  use_address: 192.168.22.191
+  id: wifi_component
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: NONE
+  # ------------------------------------------------------------------
+  # ФИКС ЗАВИСАНИЯ (BROWNOUT): Снижаем пиковый ток Wi-Fi
+  # Это предотвратит перезагрузки ESP32 при урезанном питании во сне
+  # ------------------------------------------------------------------
+  output_power: 8.5dBm
+  ap:
+    ssid: "coffee-machine-open-lcc"
+    password: "Q6ZTCYOyJYoo"
+
+ble_client:
+# Acaia MAC Address (Replace with yours)
+  - mac_address: 00:1C:97:1A:DC:D6
+    id: acaia_client
+# Uncomment for Pressensor
+#  - mac_address: 66:77:88:99:AA:BB
+#    id: pressensor_id
+
+ota:
+  - platform: esphome
+    password: "3cb5da205da46d2319d2044d381ef9b0"
+
+uart:
+  id: uart_bus
+  baud_rate: 115200
+  tx_pin: GPIO17
+  rx_pin: GPIO18
+
+#stream_server:
+#  uart_id: uart_bus
+#  port: 6638
+
+esp32_ble_tracker:
+  # on_ble_advertise:
+  #   - then:
+  #       - lambda: |-
+  #           std::string name = x.get_name();
+  #           if (name.find("LUNAR") != std::string::npos || name.find("ACAIA") != std::string::npos || name.find("PEARL") != std::string::npos) {
+  #             ESP_LOGE("ACAIA_HUNTER", ">>> TARGET ACQUIRED! MAC IS: %s <<<", x.address_str().c_str());
+  #           }
+
+acaia:
+  ble_client_id: acaia_client
+  id: acaia_1
+
+output:
+  - platform: gpio
+    pin: {number: GPIO4, mode: {output: true}}
+    id: rp2040_en
+  - platform: gpio
+    pin: {number: GPIO6, mode: {output: true}}
+    id: rp2040_serial_boot
+  - platform: gpio
+    pin: {number: GPIO5, mode: {output: true, open_drain: true}}
+    id: rp2040_bootsel
+  - platform: ledc
+    pin: GPIO47
+    id: backlight_pwm
+    frequency: 1000Hz
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: "Display Backlight"
+    id: backlight_light
+    restore_mode: ALWAYS_ON
+
+switch:
+  - platform: output
+    id: rp2040_serial_boot_sw
+    output: 'rp2040_serial_boot'
+    restore_mode: ALWAYS_ON
+    internal: true
+  - platform: output
+    id: rp2040_bootsel_sw
+    output: 'rp2040_bootsel'
+    restore_mode: ALWAYS_ON
+    internal: true
+  - platform: output
+    id: rp2040_en_sw
+    output: 'rp2040_en'
+    restore_mode: ALWAYS_ON
+    internal: true
+  - platform: open_lcc_bianca
+    eco_mode: {id: eco_mode_sw, name: Eco Mode}
+    low_flow_mode: {id: low_flow_sw, name: Low Flow}
+    sleep_mode:
+      id: sleep_mode_sw
+      name: Sleep Mode
+      on_turn_on:
+        then:
+          - switch.turn_off: standby_mode_sw
+          - light.turn_off: {id: backlight_light, transition_length: 1s}
+      on_turn_off:
+        then:
+          - light.turn_on: {id: backlight_light, transition_length: 0.5s}
+          - display.page.show: page_main
+    standby_mode:
+      id: standby_mode_sw
+      name: Standby Mode
+      on_turn_on:
+        then:
+          - switch.turn_off: sleep_mode_sw
+          - light.turn_off: {id: backlight_light, transition_length: 1s}
+      on_turn_off:
+        then:
+          - light.turn_on: {id: backlight_light, transition_length: 0.5s}
+          - display.page.show: page_main
+
+open_lcc_bianca:
+  id: lcc_1
+
+logger:
+  level: DEBUG
+  baud_rate: 0
+
+globals:
+  - id: menu_cursor
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: is_editing
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  # Буфер для хранения точек графика экстракции (до 60 секунд пролива)
+  - id: brew_flow_history
+    type: float[60]
+    restore_value: false
+
+script:
+  - id: menu_timeout
+    mode: restart
+    then:
+      - delay: 5s
+      - if:
+          condition:
+            not:
+              binary_sensor.is_on: brewing
+          then:
+            - lambda: 'id(is_editing) = false;'
+            - lambda: 'id(bianca_display)->show_page(id(page_main));'
+
+text_sensor:
+  - platform: open_lcc_bianca
+    status:
+      id: status
+      name: LCC Status
+
+binary_sensor:
+  - platform: template
+    name: "Template Currently Brewing"
+    internal: true
+    id: templ_brewing
+    on_press:
+      - if:
+          condition:
+            binary_sensor.is_on: acaia_connected
+          then:
+            - acaia.tare: acaia_1
+            - acaia.reset_timer: acaia_1
+            - acaia.start_timer: acaia_1
+    on_release:
+      - if:
+          condition:
+            binary_sensor.is_on: acaia_connected
+          then:
+            - acaia.stop_timer: acaia_1
+  - platform: open_lcc_bianca
+    brewing:
+      id: brewing
+      on_press:
+        then:
+          - lambda: |-
+              for(int i=0; i<60; i++) { id(brew_flow_history)[i] = 0.0f; }
+          - display.page.show: page_brewing
+      on_release:
+        then:
+          - delay: 4s 
+          - display.page.show: page_main
+    filling_service_boiler:
+      name: Filling Service Boiler
+      id: filling_service_boiler_sens
+      internal: true
+    water_tank_low:
+      name: Water Tank Low
+      id: water_low_sens
+      on_press:
+        then:
+          - component.update: bianca_display
+      on_release:
+        then:
+          - component.update: bianca_display
+    brew_boiler_heating:
+      name: Brew Boiler Heating
+      id: brew_boiler_on
+    service_boiler_heating:
+      name: Service Boiler Heating
+      id: service_boiler_on
+  - platform: acaia
+    connected:
+      name: Acaia Connected
+      id: acaia_connected
+      internal: true
+
+ # ----------------------------------------
+  # PLUS BUTTON
+  # ----------------------------------------
+  - platform: gpio
+    pin:
+      number: GPIO38
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    id: button_plus
+    filters:
+      - delayed_on: 20ms
+      - delayed_off: 20ms
+    on_press:
+      then:
+        - script.execute: menu_timeout
+    on_click:
+      - min_length: 50ms
+        max_length: 800ms
+        then:
+          - if:
+              condition:
+                or:
+                  - switch.is_on: sleep_mode_sw
+                  - switch.is_on: standby_mode_sw
+                  - lambda: |-
+                      std::string s = id(status).state;
+                      return (s.find("Sleep") != std::string::npos || 
+                              s.find("Standby") != std::string::npos || 
+                              s.find("Eco") != std::string::npos);
+              then:
+                - switch.turn_on: sleep_mode_sw
+                - switch.turn_off: sleep_mode_sw
+                - switch.turn_on: standby_mode_sw
+                - switch.turn_off: standby_mode_sw
+                - light.turn_on: backlight_light
+                - display.page.show: page_main
+              else: 
+                - if:
+                    condition:
+                      display.is_displaying_page: page_main
+                    then: 
+                      - display.page.show: page_modes
+                - if:
+                    condition:
+                      display.is_displaying_page: page_modes
+                    then:
+                      - lambda: |-
+                          id(menu_cursor) += 1;
+                          if(id(menu_cursor) > 2) id(menu_cursor) = 0; 
+                
+                - if:
+                    condition:
+                      display.is_displaying_page: page_routine
+                    then:
+                      - open_lcc.bianca.enqueue_routine: lcc_1
+                      - display.page.show: page_queued
+                      - delay: 0.5s
+                      - display.page.show: page_main
+
+                - if:
+                    condition: 
+                      or:
+                        - display.is_displaying_page: page_set_coffee
+                        - display.is_displaying_page: page_set_service
+                    then:
+                      - if:
+                          condition:
+                            lambda: 'return !id(is_editing);'
+                          then:
+                            - lambda: 'id(is_editing) = true;' 
+                          else:
+                            - if:
+                                condition:
+                                  display.is_displaying_page: page_set_service
+                                then:
+                                  - number.increment: service_set_point
+                            - if:
+                                condition:
+                                  display.is_displaying_page: page_set_coffee
+                                then:
+                                  - number.increment: coffee_set_point
+      
+      - min_length: 1000ms
+        max_length: 5000ms
+        then:
+          - if:
+              condition:
+                display.is_displaying_page: page_main
+              then:
+                - lambda: 'id(menu_cursor) = 0;'
+                - display.page.show: page_modes
+
+  # ----------------------------------------
+  # MINUS BUTTON
+  # ----------------------------------------
+  - platform: gpio
+    pin:
+      number: GPIO21
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    id: button_minus
+    filters:
+      - delayed_on: 20ms
+      - delayed_off: 20ms
+    on_press:
+      then:
+        - script.execute: menu_timeout
+    on_click:
+      - min_length: 50ms
+        max_length: 800ms
+        then:
+          - if:
+              condition:
+                or:
+                  - switch.is_on: sleep_mode_sw
+                  - switch.is_on: standby_mode_sw
+                  - lambda: |-
+                      std::string s = id(status).state;
+                      return (s.find("Sleep") != std::string::npos || 
+                              s.find("Standby") != std::string::npos || 
+                              s.find("Eco") != std::string::npos);
+              then:
+                - switch.turn_on: sleep_mode_sw
+                - switch.turn_off: sleep_mode_sw
+                - switch.turn_on: standby_mode_sw
+                - switch.turn_off: standby_mode_sw
+                - light.turn_on: backlight_light
+                - display.page.show: page_main
+              else: 
+                - if:
+                    condition:
+                      display.is_displaying_page: page_modes
+                    then:
+                      - lambda: |-
+                          if (id(menu_cursor) == 0) { id(eco_mode_sw).toggle(); }
+                          else if (id(menu_cursor) == 1) { id(sleep_mode_sw).toggle(); }
+                          else if (id(menu_cursor) == 2) { id(standby_mode_sw).toggle(); } 
+                - if:
+                    condition:
+                      not:
+                        display.is_displaying_page: page_modes
+                    then:
+                      - if:
+                          condition:
+                            lambda: 'return id(is_editing);'
+                          then:
+                            - if:
+                                condition:
+                                  display.is_displaying_page: page_set_service
+                                then:
+                                  - number.decrement: service_set_point
+                            - if:
+                                condition:
+                                  display.is_displaying_page: page_set_coffee
+                                then:
+                                  - number.decrement: coffee_set_point
+                          
+                          else:
+                            - if:
+                                condition:
+                                  display.is_displaying_page: page_main
+                                then:
+                                  - display.page.show: page_routine
+                                else:
+                                  - if:
+                                      condition:
+                                        display.is_displaying_page: page_routine
+                                      then:
+                                        - display.page.show: page_set_coffee
+                                      else:
+                                        - if:
+                                            condition:
+                                              display.is_displaying_page: page_set_coffee
+                                            then:
+                                              - display.page.show: page_set_service
+                                            else:
+                                              - display.page.show: page_main
+      - min_length: 1000ms
+        max_length: 5000ms
+        then:
+          - lambda: 'id(is_editing) = false;'
+          - display.page.show: page_main
+
+button:
+  - platform: template
+    name: "Reboot RP2040 to BOOTSEL"
+    on_press:
+      - open_lcc.bianca.hard_bail: lcc_1
+      - delay: 3s
+      - switch.turn_off: rp2040_en_sw
+      - delay: 500ms
+      - switch.turn_off: rp2040_bootsel_sw
+      - delay: 1s
+      - switch.turn_on: rp2040_en_sw
+      - delay: 2s
+      - switch.turn_on: rp2040_bootsel_sw
+    entity_category: "diagnostic"
+  - platform: template
+    name: "Reboot RP2040 to Serial Boot"
+    on_press:
+      - open_lcc.bianca.hard_bail: lcc_1
+      - delay: 3s
+      - switch.turn_off: rp2040_en_sw
+      - delay: 500ms
+      - switch.turn_off: rp2040_serial_boot_sw
+      - delay: 1s
+      - switch.turn_on: rp2040_en_sw
+      - delay: 2s
+      - switch.turn_on: rp2040_serial_boot_sw
+    entity_category: "diagnostic"
+  - platform: template
+    name: "Enqueue Routine"
+    on_press:
+      - open_lcc.bianca.enqueue_routine: lcc_1
+
+number:
+  - platform: open_lcc_bianca
+    coffee_boiler_temperature_offset:
+      id: bbto
+      name: Coffee Boiler Temperature Offset
+      mode: box
+      entity_category: "config"
+    auto_sleep_after:
+      id: asa
+      name: Auto Sleep After
+      mode: box
+      entity_category: "config"
+    coffee_boiler_temperature_set_point:
+      id: coffee_set_point
+      name: Coffee boiler set point
+      mode: box
+    service_boiler_temperature_set_point:
+      id: service_set_point
+      name: Service boiler set point
+      mode: box
+
+sensor:
+  - platform: open_lcc_bianca
+    coffee_boiler_temperature:
+      name: Coffee Boiler Temperature
+      id: coffee_boiler_sens
+    service_boiler_temperature:
+      name: Service Boiler Temperature
+      id: service_boiler_sens
+    external_temperature_1:
+      name: E61 Outlet Temperature
+      id: outlet_temp_sens
+    external_temperature_2:
+      name: E61 Inlet Temperature
+      id: inlet_temp_sens
+    auto_sleep_in:
+      name: Auto-sleep in
+      unit_of_measurement: "min"
+      accuracy_decimals: 0
+      filters:
+        - lambda: return x / 60;
+        - or:
+            - throttle: 60s
+            - delta: 0.45
+    brew_time:
+      name: Brew time
+      id: brew_time
+  - platform: acaia
+    weight:
+      id: scale_sens
+      name: Scale weight
+      accuracy_decimals: 1
+      unit_of_measurement: g
+      filters:
+        - lambda: return x * 1000;
+    flow:
+      name: Scale flow
+      id: flow_sens
+  - platform: wifi_signal 
+    name: "WiFi Signal dB"
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: "diagnostic"
+  - platform: uptime
+    id: esp32_up
+    name: "ESP32 Uptime"
+    unit_of_measurement: "min"
+    accuracy_decimals: 0
+    filters:
+      - lambda: return x / 60;
+      - or:
+          - throttle: 60s
+          - delta: 0.45
+    entity_category: "diagnostic"
+
+api:
+  reboot_timeout: 0s
+  encryption:
+    key: "rGIhL6mKywQCW2HHH6hk2gjjq1y7Uy2bl6u8KQwvp7M="
+
+captive_portal:
+
+web_server:
+  port: 80
+  ota: false 
+  log: false
+  include_internal: true
+
+spi:
+  clk_pin: GPIO12
+  mosi_pin: GPIO11
+  interface: hardware
+
+i2c:
+  sda: 2
+  scl: 1
+  scan: true
+  id: qwiic_3
+
+font:
+  - file:
+      type: gfonts
+      family: Roboto
+      weight: 900
+    id: font12px
+    size: 12
+  - file:
+      type: gfonts
+      family: Roboto
+      weight: 900
+    id: font12
+    size: 24
+  - file:
+      type: gfonts
+      family: Roboto
+      weight: 900
+    id: font_mid
+    size: 34
+  - file:
+      type: gfonts
+      family: Roboto
+      weight: 900
+    id: font36
+    size: 48
+  - file: "9x15.bdf"
+    id: font2
+  - file: "5x7.bdf"
+    id: font1
+
+image:
+  - file: "xbm/pump_on_2x.h"
+    id: pump_on
+    type: BINARY
+    transparency: chroma_key
+  - file: "xbm/no_water_2x.h"
+    id: no_water
+    type: BINARY
+    transparency: chroma_key
+  - file: "xbm/eco_mode_2x.h"
+    id: eco_mode
+    type: BINARY
+    transparency: chroma_key
+  - file: "xbm/bssr_on_2x.h"
+    id: bssr_on
+    type: BINARY
+    transparency: chroma_key
+  - file: "xbm/sssr_on_2x.h"
+    id: sssr_on
+    type: BINARY
+    transparency: chroma_key
+  # ФИКС СИНТАКСИСА: Задали параметры для корректной обработки цветного прозрачного PNG в современном ESPHome
+  - file: "custom_components/open_lcc_bianca/no-water-icon.png"
+    id: custom_drop_alert
+    type: RGB
+    transparency: alpha_channel
+
+# ------------------------------------------------------------------
+# ВНЕДРЕНИЕ ЦВЕТНОЙ ПАЛИТРЫ МАГНУСА (RGB565)
+# ------------------------------------------------------------------
+color:
+  - id: white
+    red: 100%
+    green: 100%
+    blue: 100%
+  - id: black
+    red: 0%
+    green: 0%
+    blue: 0%
+  - id: red
+    red: 100%
+    green: 0%
+    blue: 0%
+  - id: green
+    red: 0%
+    green: 100%
+    blue: 0%
+  - id: blue
+    red: 0%
+    green: 0%
+    blue: 100%
+  - id: orange
+    red: 100%
+    green: 65%
+    blue: 0%
+  - id: gray
+    red: 60%
+    green: 60%
+    blue: 60%
+  - id: my_gray
+    red: 50%
+    green: 50%
+    blue: 50%
+  - id: dark_gray
+    red: 20%
+    green: 20%
+    blue: 20%
+  - id: my_green
+    red: 0%
+    green: 80%
+    blue: 0%
+  - id: my_yellow
+    red: 100%
+    green: 100%
+    blue: 0%
+  - id: my_red
+    red: 80%
+    green: 0%
+    blue: 0%
+
+display:
+  - platform: st7789v
+    id: bianca_display
+    model: Custom
+    width: 172
+    height: 320
+    offset_height: 0
+    offset_width: 35
+    cs_pin: GPIO10
+    dc_pin: GPIO9
+    reset_pin: GPIO8
+    rotation: 90°
+    update_interval: 500ms
+    pages:
+      - id: page_main
+        lambda: |-
+          // ГРАФИЧЕСКИЙ ЭКРАН ПРЕДУПРЕЖДЕНИЯ (ТОЛЬКО КРУПНАЯ RGBA ИКОНКА ПО ЦЕНТРУ КРУГА)
+          if (id(water_low_sens).state) {
+            it.image(160, 90, id(custom_drop_alert), ImageAlign::CENTER);
+            
+            // Маленький технический статус WiFi в углу
+            Color signal = id(my_red);
+            if (id(wifi_signal_db).state >= -60) signal = id(my_green);
+            else if (id(wifi_signal_db).state >= -67) signal = id(my_yellow);
+            it.printf(285, 34, id(font2), signal, TextAlign::TOP_RIGHT, "%.0f", id(wifi_signal_db).state);
+            return;
+          }
+
+          // КЛАССИЧЕСКИЙ РЕНДЕР (ЕСЛИ С ВОДОЙ ВСЕ В ПОРЯДКЕ)
+          Color textColor = id(white);
+          if (id(sleep_mode_sw).state) {
+            textColor = id(my_gray);
+          }
+          
+          if (id(eco_mode_sw).state) {
+            it.printf(160, 50, id(font_mid), textColor, TextAlign::TOP_CENTER, "%.1f", id(coffee_boiler_sens).state);
+            it.line(100, 90, 220, 90, textColor);
+            it.printf(160, 130, id(font12), textColor, TextAlign::BOTTOM_CENTER, "%.1f °C", id(coffee_set_point).state);
+          } else {
+            it.printf(105, 50, id(font_mid), textColor, TextAlign::TOP_CENTER, "%.1f", id(coffee_boiler_sens).state);
+            it.line(65, 90, 145, 90, textColor);
+            it.printf(105, 130, id(font12), textColor, TextAlign::BOTTOM_CENTER, "%.1f °C", id(coffee_set_point).state);
+      
+            it.printf(215, 50, id(font_mid), textColor, TextAlign::TOP_CENTER, "%.0f", id(service_boiler_sens).state);
+            it.line(175, 90, 255, 90, textColor);
+            it.printf(215, 130, id(font12), textColor, TextAlign::BOTTOM_CENTER, "%.0f °C", id(service_set_point).state);
+          }
+
+          if (id(acaia_connected).state) {
+            it.printf(80, 165, id(font12), id(my_gray), TextAlign::BOTTOM_CENTER, "%.1f g", id(scale_sens).state);
+          }
+    
+          it.image(285, 45, id(eco_mode), ImageAlign::TOP_RIGHT, id(black), id(eco_mode_sw).state ? id(white) : id(dark_gray));
+          it.image(288, 75, id(pump_on), ImageAlign::TOP_RIGHT, id(black), id(filling_service_boiler_sens).state ? id(white) : id(dark_gray));
+          it.image(285, 95, id(no_water), ImageAlign::TOP_RIGHT, id(black), id(dark_gray));
+    
+          if (id(brew_boiler_on).state) {
+            it.image(285, 140, id(bssr_on), ImageAlign::TOP_RIGHT, id(black), id(white));
+          } else if (id(service_boiler_on).state) {
+            it.image(285, 140, id(sssr_on), ImageAlign::TOP_RIGHT, id(black), id(white));
+          }
+    
+          Color signal;
+          if (id(wifi_signal_db).state >= -60) {
+            signal = id(my_green);
+          } else if (id(wifi_signal_db).state >= -67) {
+            signal = id(my_yellow);
+          } else {
+            signal = id(my_red);
+          }
+    
+          it.printf(285, 34, id(font2), signal, TextAlign::TOP_RIGHT, "%.0f", id(wifi_signal_db).state);
+
+          if (id(standby_mode_sw).state) {
+             it.print(160, 160, id(font12px), id(orange), TextAlign::BOTTOM_CENTER, "STANDBY MODE");
+          }
+
+      - id: page_brewing
+        lambda: |-
+          it.printf(75, 42, id(font12), id(white), TextAlign::TOP_CENTER, "%.0f s", id(brew_time).state);
+          
+          if (id(acaia_connected).state) {
+            it.printf(245, 42, id(font12), id(white), TextAlign::TOP_CENTER, "%.1f g", id(scale_sens).state);
+            it.printf(160, 48, id(font_mid), id(orange), TextAlign::TOP_CENTER, "%.1f g/s", id(flow_sens).state);
+            
+            int graph_left = 60;
+            int graph_right = 260;
+            int graph_bottom = 145;
+            int graph_top = 85; 
+            int graph_height = graph_bottom - graph_top;
+            
+            it.line(graph_left, graph_bottom, graph_right, graph_bottom, id(dark_gray)); 
+            it.line(graph_left, graph_top, graph_left, graph_bottom, id(dark_gray));     
+            
+            int target_y = graph_bottom - (int)((2.5f / 5.0f) * graph_height);
+            for (int x = graph_left; x < graph_right; x += 4) {
+              it.draw_pixel_at(x, target_y, id(dark_gray));
+            }
+
+            int current_second = (int)id(brew_time).state;
+            if (current_second >= 0 && current_second < 60) {
+              id(brew_flow_history)[current_second] = id(flow_sens).state;
+            }
+
+            int points_to_draw = std::min(current_second, 59);
+            if (points_to_draw > 1) {
+              float time_step = (float)(graph_right - graph_left) / 45.0f; 
+              
+              for (int i = 0; i < points_to_draw; i++) {
+                int x1 = graph_left + (int)(i * time_step);
+                int x2 = graph_left + (int)((i + 1) * time_step);
+                
+                float val1 = std::min(id(brew_flow_history)[i], 5.0f);
+                float val2 = std::min(id(brew_flow_history)[i+1], 5.0f);
+                
+                int y1 = graph_bottom - (int)((val1 / 5.0f) * graph_height);
+                int y2 = graph_bottom - (int)((val2 / 5.0f) * graph_height);
+                
+                if (x2 <= graph_right) {
+                  it.line(x1, y1, x2, y2, id(orange));
+                }
+              }
+            }
+          }
+
+      - id: page_routine
+        lambda: |-
+          it.print(160, 30, id(font12), id(white), TextAlign::TOP_CENTER, "PRE-INFUSION");
+          it.print(160, 80, id(font12), id(orange), TextAlign::TOP_CENTER, "Press [+] to Queue");
+          it.print(160, 140, id(font12px), id(gray), TextAlign::TOP_CENTER, "(+ queue | - next)");
+
+      - id: page_queued
+        lambda: |-
+          it.print(160, 50, id(font12), id(white), TextAlign::TOP_CENTER, "PRE-INFUSION");
+          it.print(160, 100, id(font_mid), id(green), TextAlign::TOP_CENTER, "QUEUED!");
+
+      - id: page_set_coffee
+        lambda: |-
+          it.print(160, 35, id(font12), id(white), TextAlign::TOP_CENTER, "TARGET: COFFEE");
+          auto edit_c = id(is_editing) ? id(orange) : id(white);
+          it.printf(160, 75, id(font_mid), edit_c, TextAlign::TOP_CENTER, "%.1f°C", id(coffee_set_point).state);
+          if (id(is_editing)) { it.print(160, 135, id(font12px), id(gray), TextAlign::TOP_CENTER, "(+/- adj | hold - save)"); }
+          else { it.print(160, 135, id(font12px), id(gray), TextAlign::TOP_CENTER, "(+ edit | - next)"); }
+
+      - id: page_set_service
+        lambda: |-
+          it.print(160, 35, id(font12), id(white), TextAlign::TOP_CENTER, "TARGET: STEAM");
+          auto edit_s = id(is_editing) ? id(orange) : id(white);
+          it.printf(160, 75, id(font_mid), edit_s, TextAlign::TOP_CENTER, "%.1f°C", id(service_set_point).state);
+          if (id(is_editing)) { it.print(160, 135, id(font12px), id(gray), TextAlign::TOP_CENTER, "(+/- adj | hold - save)"); }
+          else { it.print(160, 135, id(font12px), id(gray), TextAlign::TOP_CENTER, "(+ edit | - next)"); }
+
+      - id: page_modes
+        lambda: |-
+          // СИНХРОНИЗИРОВАННОЕ МЕНЮ ИЗ 3-Х ПУНКТОВ С ШАГОМ СТРОК 35 PX ПО ВЕРТИКАЛИ
+          it.print(160, 15, id(font12), id(white), TextAlign::TOP_CENTER, "SYSTEM MODES");
+          
+          int cursor_y = 55 + (id(menu_cursor) * 35);
+          it.print(85, cursor_y, id(font12), id(orange), TextAlign::TOP_LEFT, ">");
+          
+          it.printf(105, 55, id(font12), id(white), TextAlign::TOP_LEFT, "Eco:     %s", id(eco_mode_sw).state ? "ON" : "OFF");
+          it.printf(105, 90, id(font12), id(white), TextAlign::TOP_LEFT, "Sleep:   %s", id(sleep_mode_sw).state ? "ON" : "OFF");
+          it.printf(105, 125, id(font12), id(white), TextAlign::TOP_LEFT, "Standby: %s", id(standby_mode_sw).state ? "ON" : "OFF");
