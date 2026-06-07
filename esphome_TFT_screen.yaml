@@ -21,10 +21,10 @@ external_components:
 #  - source:
 #      type: git
 #      url: https://github.com/open-lcc/esphome-st7789v-fast
-#  - source:
-#      type: git
-#      url: https://github.com/oxan/esphome-stream-server
-#    components: [ stream_server ]
+  # - source:
+  #     type: git
+  #     url: https://github.com/oxan/esphome-stream-server
+  #   components: [ stream_server ]
 
 esphome:
   project:
@@ -93,7 +93,7 @@ uart:
   tx_pin: GPIO17
   rx_pin: GPIO18
 
-#stream_server:
+# stream_server:
 #  uart_id: uart_bus
 #  port: 6638
 
@@ -150,18 +150,32 @@ switch:
     internal: true
   - platform: open_lcc_bianca
     eco_mode: {id: eco_mode_sw, name: Eco Mode}
-    low_flow_mode: {id: low_flow_sw, name: Low Flow}
+#    low_flow_mode: {id: low_flow_sw, name: Low Flow}
     sleep_mode:
       id: sleep_mode_sw
       name: Sleep Mode
+      # АЛГОРИТМ БЛОКИРОВКИ: Перехватываем триггер включения сна
       on_turn_on:
         then:
-          - switch.turn_off: standby_mode_sw
-          - light.turn_off: {id: backlight_light, transition_length: 1s}
+          - if:
+              condition:
+                switch.is_on: standby_mode_sw
+              then:
+                # Если Standby активен - принудительно отключаем Sleep обратно и выходим
+                - switch.turn_off: sleep_mode_sw
+              else:
+                # Стандартное поведение, если Standby выключен
+                - switch.turn_off: standby_mode_sw
+                - light.turn_off: {id: backlight_light, transition_length: 1s}
       on_turn_off:
         then:
-          - light.turn_on: {id: backlight_light, transition_length: 0.5s}
-          - display.page.show: page_main
+          - if:
+              condition:
+                not:
+                  switch.is_on: standby_mode_sw
+              then:
+                - light.turn_on: {id: backlight_light, transition_length: 0.5s}
+                - display.page.show: page_main
     standby_mode:
       id: standby_mode_sw
       name: Standby Mode
@@ -173,6 +187,12 @@ switch:
         then:
           - light.turn_on: {id: backlight_light, transition_length: 0.5s}
           - display.page.show: page_main
+
+  - platform: template
+    name: "Low Flow Pre-infusion"
+    id: low_flow_sw
+    restore_mode: RESTORE_DEFAULT_ON
+    optimistic: true
 
 open_lcc_bianca:
   id: lcc_1
@@ -241,6 +261,11 @@ binary_sensor:
           - lambda: |-
               for(int i=0; i<60; i++) { id(brew_flow_history)[i] = 0.0f; }
           - display.page.show: page_brewing
+          - if:
+              condition:
+                switch.is_on: low_flow_sw
+              then:
+                - open_lcc.bianca.enqueue_routine: lcc_1
       on_release:
         then:
           - delay: 4s 
@@ -320,7 +345,7 @@ binary_sensor:
                     then:
                       - lambda: |-
                           id(menu_cursor) += 1;
-                          if(id(menu_cursor) > 2) id(menu_cursor) = 0; 
+                          if(id(menu_cursor) > 3) id(menu_cursor) = 0; 
                 
                 - if:
                     condition:
@@ -411,6 +436,7 @@ binary_sensor:
                           if (id(menu_cursor) == 0) { id(eco_mode_sw).toggle(); }
                           else if (id(menu_cursor) == 1) { id(sleep_mode_sw).toggle(); }
                           else if (id(menu_cursor) == 2) { id(standby_mode_sw).toggle(); } 
+                          else if (id(menu_cursor) == 3) { id(low_flow_sw).toggle(); }
                 - if:
                     condition:
                       not:
@@ -639,7 +665,6 @@ image:
     id: sssr_on
     type: BINARY
     transparency: chroma_key
-  # ФИКС СИНТАКСИСА: Задали параметры для корректной обработки цветного прозрачного PNG в современном ESPHome
   - file: "custom_components/open_lcc_bianca/no-water-icon.png"
     id: custom_drop_alert
     type: RGB
@@ -861,3 +886,4 @@ display:
           it.printf(105, 55, id(font12), id(white), TextAlign::TOP_LEFT, "Eco:     %s", id(eco_mode_sw).state ? "ON" : "OFF");
           it.printf(105, 90, id(font12), id(white), TextAlign::TOP_LEFT, "Sleep:   %s", id(sleep_mode_sw).state ? "ON" : "OFF");
           it.printf(105, 125, id(font12), id(white), TextAlign::TOP_LEFT, "Standby: %s", id(standby_mode_sw).state ? "ON" : "OFF");
+          it.printf(105, 160, id(font12), id(white), TextAlign::TOP_LEFT, "LowFlow: %s", id(low_flow_sw).state ? "ON" : "OFF");
