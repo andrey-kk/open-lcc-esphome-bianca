@@ -73,7 +73,7 @@ wifi:
   output_power: 8.5dBm
   ap:
     ssid: "coffee-machine-open-lcc"
-    password: "Q6ZTCYOyJYoo"
+    password: !secret coffee_machine_ap_password
 
 ble_client:
 # Acaia MAC Address (Replace with yours)
@@ -85,7 +85,7 @@ ble_client:
 
 ota:
   - platform: esphome
-    password: "3cb5da205da46d2319d2044d381ef9b0"
+    password: !secret coffee_machine_ota_password
 
 uart:
   id: uart_bus
@@ -593,7 +593,7 @@ sensor:
 api:
   reboot_timeout: 0s
   encryption:
-    key: "rGIhL6mKywQCW2HHH6hk2gjjq1y7Uy2bl6u8KQwvp7M="
+    key: !secret coffee_machine_api_key
 
 captive_portal:
 
