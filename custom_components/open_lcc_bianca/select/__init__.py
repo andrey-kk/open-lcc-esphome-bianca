@@ -37,5 +37,6 @@ async def to_code(config):
     await cg.register_parented(var, config[CONF_OPEN_LCC_BIANCA_ID])
 
     if flow_mode_config := config.get(CONF_FLOW_MODE):
-        sel = await select.new_select(flow_mode_config, options=["Full Flow", "Low Flow", "Line Pressure", "No Flow"])
+        # "Line Pressure" removed: the machine is tank-fed, so there is no line pressure
+        sel = await select.new_select(flow_mode_config, options=["Full Flow", "Low Flow", "No Flow"])
         cg.add(var.set_flow_mode(sel))

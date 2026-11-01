@@ -35,11 +35,11 @@ esphome:
       - -Os
       - -Werror=all
     board_build.flash_mode: dio
-    board_build.partitions: "/config/esphome/custom_partitions.csv"
 
 esp32:
   board: esp32-s3-devkitc-1
   flash_size: 16MB
+  partitions: custom_partitions.csv
   framework:
     type: esp-idf
     sdkconfig_options:

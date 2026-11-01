@@ -34,9 +34,6 @@ namespace esphome {
                         case ESP_FLOW_MODE_PUMP_ON_SOLENOID_CLOSED:
                             flowString = "Low Flow";
                             break;
-                        case ESP_FLOW_MODE_PUMP_OFF_SOLENOID_OPEN:
-                            flowString = "Line Pressure";
-                            break;
                         case ESP_FLOW_MODE_PUMP_OFF_SOLENOID_CLOSED:
                             flowString = "No Flow";
                             break;
@@ -58,8 +55,6 @@ namespace esphome {
                         get_parent()->sendCommand(ESP_SYSTEM_COMMAND_SET_FLOW_MODE, (uint32_t)ESP_FLOW_MODE_PUMP_ON_SOLENOID_OPEN);
                     } else if (str == "Low Flow") {
                         get_parent()->sendCommand(ESP_SYSTEM_COMMAND_SET_FLOW_MODE, (uint32_t)ESP_FLOW_MODE_PUMP_ON_SOLENOID_CLOSED);
-                    } else if (str == "Line Pressure") {
-                        get_parent()->sendCommand(ESP_SYSTEM_COMMAND_SET_FLOW_MODE, (uint32_t)ESP_FLOW_MODE_PUMP_OFF_SOLENOID_OPEN);
                     } else if (str == "No Flow") {
                         get_parent()->sendCommand(ESP_SYSTEM_COMMAND_SET_FLOW_MODE, (uint32_t)ESP_FLOW_MODE_PUMP_OFF_SOLENOID_CLOSED);
                     } else {

@@ -35,11 +35,11 @@ esphome:
       - -Os
       - -Werror=all
     board_build.flash_mode: dio
-    board_build.partitions: "/config/esphome/custom_partitions.csv"
 
 esp32:
   board: esp32-s3-devkitc-1
   flash_size: 16MB
+  partitions: custom_partitions.csv
   framework:
     type: esp-idf
     sdkconfig_options:
@@ -276,14 +276,10 @@ binary_sensor:
                   - switch.is_on: standby_mode_sw
                   - lambda: |-
                       std::string s = id(status).state;
-                      return (s.find("Sleep") != std::string::npos || 
-                              s.find("Standby") != std::string::npos || 
-                              s.find("Eco") != std::string::npos);
+                      return s.find("Sleep") != std::string::npos;  // status text is "Sleeping"
               then:
-                # Force a state toggle to guarantee UART packet transmission 
-                - switch.turn_on: sleep_mode_sw
+                # Wake: turn_off always sends the command to the RP2040, even if the switch already shows OFF
                 - switch.turn_off: sleep_mode_sw
-                - switch.turn_on: standby_mode_sw
                 - switch.turn_off: standby_mode_sw
                 - lambda: 'id(my_oled)->turn_on();'
                 - display.page.show: page_main
@@ -371,14 +367,10 @@ binary_sensor:
                   - switch.is_on: standby_mode_sw
                   - lambda: |-
                       std::string s = id(status).state;
-                      return (s.find("Sleep") != std::string::npos || 
-                              s.find("Standby") != std::string::npos || 
-                              s.find("Eco") != std::string::npos);
+                      return s.find("Sleep") != std::string::npos;  // status text is "Sleeping"
               then:
-                # Force a state toggle to guarantee UART packet transmission 
-                - switch.turn_on: sleep_mode_sw
+                # Wake: turn_off always sends the command to the RP2040, even if the switch already shows OFF
                 - switch.turn_off: sleep_mode_sw
-                - switch.turn_on: standby_mode_sw
                 - switch.turn_off: standby_mode_sw
                 - lambda: 'id(my_oled)->turn_on();'
                 - display.page.show: page_main

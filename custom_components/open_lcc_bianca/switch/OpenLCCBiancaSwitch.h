@@ -37,7 +37,7 @@ namespace esphome {
                 }
 
                 if (low_flow_mode_ != nullptr) {
-                    low_flow_mode_->publish_state(message.flowMode != ESP_FLOW_MODE_PUMP_OFF_SOLENOID_OPEN);
+                    low_flow_mode_->publish_state(message.flowMode == ESP_FLOW_MODE_PUMP_ON_SOLENOID_CLOSED);
                 }
             }
 
@@ -66,8 +66,9 @@ namespace esphome {
             void set_low_flow_mode(LambdaSwitch *low_flow_mode) {
                 low_flow_mode_ = low_flow_mode;
                 low_flow_mode_->set_write_state_f([this](bool state) {
+                    // ON = Low Flow (pump on, valve closed), OFF = Full Flow
                     if (state) {
-                        get_parent()->sendCommand(ESP_SYSTEM_COMMAND_SET_FLOW_MODE, (uint32_t)ESP_FLOW_MODE_PUMP_OFF_SOLENOID_OPEN);
+                        get_parent()->sendCommand(ESP_SYSTEM_COMMAND_SET_FLOW_MODE, (uint32_t)ESP_FLOW_MODE_PUMP_ON_SOLENOID_CLOSED);
                     } else {
                         get_parent()->sendCommand(ESP_SYSTEM_COMMAND_SET_FLOW_MODE, (uint32_t)ESP_FLOW_MODE_PUMP_ON_SOLENOID_OPEN);
                     }
