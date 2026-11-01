@@ -39,7 +39,6 @@ esphome:
       - -Os
       - -Werror=all
     board_build.flash_mode: dio
-    board_build.partitions: "/config/esphome/custom_partitions.csv"
 
 #  on_boot:
 #    priority: -100
@@ -50,6 +49,7 @@ esphome:
 esp32:
   board: esp32-s3-devkitc-1
   flash_size: 16MB
+  partitions: custom_partitions.csv
   framework:
     type: esp-idf
     sdkconfig_options:
@@ -73,7 +73,7 @@ wifi:
   output_power: 8.5dBm
   ap:
     ssid: "coffee-machine-open-lcc"
-    password: "Q6ZTCYOyJYoo"
+    password: !secret coffee_machine_ap_password
 
 ble_client:
 # Acaia MAC Address (Replace with yours)
@@ -85,7 +85,7 @@ ble_client:
 
 ota:
   - platform: esphome
-    password: "3cb5da205da46d2319d2044d381ef9b0"
+    password: !secret coffee_machine_ota_password
 
 uart:
   id: uart_bus
@@ -193,6 +193,14 @@ switch:
     id: low_flow_sw
     restore_mode: RESTORE_DEFAULT_ON
     optimistic: true
+    # The routine is armed on the RP2040 BEFORE the brew; the RP2040 itself
+    # starts it when the lever goes up (no Wi-Fi / ESP delay).
+    # Re-arming after each brew and after reboots is done by the
+    # 'arm_preinfusion' interval below.
+    on_turn_on:
+      - open_lcc.bianca.enqueue_routine: lcc_1
+    on_turn_off:
+      - open_lcc.bianca.clear_routine: lcc_1
 
 open_lcc_bianca:
   id: lcc_1
@@ -228,6 +236,22 @@ script:
             - lambda: 'id(is_editing) = false;'
             - lambda: 'id(bianca_display)->show_page(id(page_main));'
 
+# Keeps the pre-infusion routine armed on the RP2040 while the switch is on.
+# The RP2040 unloads the routine when a brew ends (current routine -> 0) and
+# after its own reboot; this re-arms it while the machine is idle.
+interval:
+  - id: arm_preinfusion
+    interval: 2s
+    then:
+      - if:
+          condition:
+            and:
+              - switch.is_on: low_flow_sw
+              - binary_sensor.is_off: brewing
+              - lambda: 'return id(current_routine_sens).has_state() && id(current_routine_sens).state < 0.5f;'
+          then:
+            - open_lcc.bianca.enqueue_routine: lcc_1
+
 text_sensor:
   - platform: open_lcc_bianca
     status:
@@ -261,11 +285,6 @@ binary_sensor:
           - lambda: |-
               for(int i=0; i<60; i++) { id(brew_flow_history)[i] = 0.0f; }
           - display.page.show: page_brewing
-          - if:
-              condition:
-                switch.is_on: low_flow_sw
-              then:
-                - open_lcc.bianca.enqueue_routine: lcc_1
       on_release:
         then:
           - delay: 4s 
@@ -323,13 +342,10 @@ binary_sensor:
                   - switch.is_on: standby_mode_sw
                   - lambda: |-
                       std::string s = id(status).state;
-                      return (s.find("Sleep") != std::string::npos || 
-                              s.find("Standby") != std::string::npos || 
-                              s.find("Eco") != std::string::npos);
+                      return s.find("Sleep") != std::string::npos;  // status text is "Sleeping"
               then:
-                - switch.turn_on: sleep_mode_sw
+                # Wake: turn_off always sends the command to the RP2040, even if the switch already shows OFF
                 - switch.turn_off: sleep_mode_sw
-                - switch.turn_on: standby_mode_sw
                 - switch.turn_off: standby_mode_sw
                 - light.turn_on: backlight_light
                 - display.page.show: page_main
@@ -417,13 +433,10 @@ binary_sensor:
                   - switch.is_on: standby_mode_sw
                   - lambda: |-
                       std::string s = id(status).state;
-                      return (s.find("Sleep") != std::string::npos || 
-                              s.find("Standby") != std::string::npos || 
-                              s.find("Eco") != std::string::npos);
+                      return s.find("Sleep") != std::string::npos;  // status text is "Sleeping"
               then:
-                - switch.turn_on: sleep_mode_sw
+                # Wake: turn_off always sends the command to the RP2040, even if the switch already shows OFF
                 - switch.turn_off: sleep_mode_sw
-                - switch.turn_on: standby_mode_sw
                 - switch.turn_off: standby_mode_sw
                 - light.turn_on: backlight_light
                 - display.page.show: page_main
@@ -562,6 +575,9 @@ sensor:
     brew_time:
       name: Brew time
       id: brew_time
+    current_routine:
+      id: current_routine_sens
+      internal: true
   - platform: acaia
     weight:
       id: scale_sens
@@ -593,7 +609,7 @@ sensor:
 api:
   reboot_timeout: 0s
   encryption:
-    key: "rGIhL6mKywQCW2HHH6hk2gjjq1y7Uy2bl6u8KQwvp7M="
+    key: !secret coffee_machine_api_key
 
 captive_portal:
 
@@ -877,13 +893,14 @@ display:
 
       - id: page_modes
         lambda: |-
-          // СИНХРОНИЗИРОВАННОЕ МЕНЮ ИЗ 3-Х ПУНКТОВ С ШАГОМ СТРОК 35 PX ПО ВЕРТИКАЛИ
+          // СИНХРОНИЗИРОВАННОЕ МЕНЮ ИЗ 4-Х ПУНКТОВ С ШАГОМ СТРОК 28 PX ПО ВЕРТИКАЛИ
           it.print(160, 15, id(font12), id(white), TextAlign::TOP_CENTER, "SYSTEM MODES");
           
-          int cursor_y = 55 + (id(menu_cursor) * 35);
+          // 4 rows, 28 px apart, kept inside the area already in use (rows end ~162)
+          int cursor_y = 50 + (id(menu_cursor) * 28);
           it.print(85, cursor_y, id(font12), id(orange), TextAlign::TOP_LEFT, ">");
           
-          it.printf(105, 55, id(font12), id(white), TextAlign::TOP_LEFT, "Eco:     %s", id(eco_mode_sw).state ? "ON" : "OFF");
-          it.printf(105, 90, id(font12), id(white), TextAlign::TOP_LEFT, "Sleep:   %s", id(sleep_mode_sw).state ? "ON" : "OFF");
-          it.printf(105, 125, id(font12), id(white), TextAlign::TOP_LEFT, "Standby: %s", id(standby_mode_sw).state ? "ON" : "OFF");
-          it.printf(105, 160, id(font12), id(white), TextAlign::TOP_LEFT, "LowFlow: %s", id(low_flow_sw).state ? "ON" : "OFF");
+          it.printf(105, 50, id(font12), id(white), TextAlign::TOP_LEFT, "Eco:     %s", id(eco_mode_sw).state ? "ON" : "OFF");
+          it.printf(105, 78, id(font12), id(white), TextAlign::TOP_LEFT, "Sleep:   %s", id(sleep_mode_sw).state ? "ON" : "OFF");
+          it.printf(105, 106, id(font12), id(white), TextAlign::TOP_LEFT, "Standby: %s", id(standby_mode_sw).state ? "ON" : "OFF");
+          it.printf(105, 134, id(font12), id(white), TextAlign::TOP_LEFT, "LowFlow: %s", id(low_flow_sw).state ? "ON" : "OFF");

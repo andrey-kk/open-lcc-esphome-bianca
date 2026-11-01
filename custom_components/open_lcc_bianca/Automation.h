@@ -79,6 +79,18 @@ namespace esphome {
         };
 
         template<typename... Ts>
+        class OpenLCCClearRoutineAction : public Action<Ts...> {
+        public:
+            explicit OpenLCCClearRoutineAction(OpenLCCBianca *bianca) : bianca_(bianca) {}
+
+            // Unloads the routine on the RP2040; it returns to step 0, which restores full flow.
+            void play(Ts... x) override { bianca_->sendCommand(ESP_SYSTEM_COMMAND_CLEAR_ROUTINE, false); }
+
+        protected:
+            OpenLCCBianca *bianca_;
+        };
+
+        template<typename... Ts>
         class OpenLCCSetBrewTemperatureOffsetAction : public Action<Ts...> {
         public:
             explicit OpenLCCSetBrewTemperatureOffsetAction(OpenLCCBianca *bianca) : bianca_(bianca) {}

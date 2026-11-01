@@ -35,11 +35,11 @@ esphome:
       - -Os
       - -Werror=all
     board_build.flash_mode: dio
-    board_build.partitions: "/config/esphome/custom_partitions.csv"
 
 esp32:
   board: esp32-s3-devkitc-1
   flash_size: 16MB
+  partitions: custom_partitions.csv
   framework:
     type: esp-idf
     sdkconfig_options:
@@ -63,7 +63,7 @@ wifi:
   output_power: 8.5dBm
   ap:
     ssid: "coffee-machine-open-lcc"
-    password: "Q6ZTCYOyJYoo"
+    password: !secret coffee_machine_ap_password
 
 ble_client:
 # Acaia MAC Address (Replace with yours)
@@ -75,7 +75,7 @@ ble_client:
 
 ota:
   - platform: esphome
-    password: "3cb5da205da46d2319d2044d381ef9b0"
+    password: !secret coffee_machine_ota_password
 
 uart:
   baud_rate: 115200
@@ -276,14 +276,10 @@ binary_sensor:
                   - switch.is_on: standby_mode_sw
                   - lambda: |-
                       std::string s = id(status).state;
-                      return (s.find("Sleep") != std::string::npos || 
-                              s.find("Standby") != std::string::npos || 
-                              s.find("Eco") != std::string::npos);
+                      return s.find("Sleep") != std::string::npos;  // status text is "Sleeping"
               then:
-                # Force a state toggle to guarantee UART packet transmission 
-                - switch.turn_on: sleep_mode_sw
+                # Wake: turn_off always sends the command to the RP2040, even if the switch already shows OFF
                 - switch.turn_off: sleep_mode_sw
-                - switch.turn_on: standby_mode_sw
                 - switch.turn_off: standby_mode_sw
                 - lambda: 'id(my_oled)->turn_on();'
                 - display.page.show: page_main
@@ -371,14 +367,10 @@ binary_sensor:
                   - switch.is_on: standby_mode_sw
                   - lambda: |-
                       std::string s = id(status).state;
-                      return (s.find("Sleep") != std::string::npos || 
-                              s.find("Standby") != std::string::npos || 
-                              s.find("Eco") != std::string::npos);
+                      return s.find("Sleep") != std::string::npos;  // status text is "Sleeping"
               then:
-                # Force a state toggle to guarantee UART packet transmission 
-                - switch.turn_on: sleep_mode_sw
+                # Wake: turn_off always sends the command to the RP2040, even if the switch already shows OFF
                 - switch.turn_off: sleep_mode_sw
-                - switch.turn_on: standby_mode_sw
                 - switch.turn_off: standby_mode_sw
                 - lambda: 'id(my_oled)->turn_on();'
                 - display.page.show: page_main
@@ -534,7 +526,7 @@ sensor:
 api:
   reboot_timeout: 0s
   encryption:
-    key: "rGIhL6mKywQCW2HHH6hk2gjjq1y7Uy2bl6u8KQwvp7M="
+    key: !secret coffee_machine_api_key
 
 captive_portal:
 
