@@ -67,8 +67,8 @@ wifi:
   password: !secret wifi_password
   power_save_mode: NONE
   # ------------------------------------------------------------------
-  # ФИКС ЗАВИСАНИЯ (BROWNOUT): Снижаем пиковый ток Wi-Fi
-  # Это предотвратит перезагрузки ESP32 при урезанном питании во сне
+  # FREEZE FIX (BROWNOUT): reduce the Wi-Fi peak current
+  # This prevents ESP32 reboots on the reduced power supply during sleep
   # ------------------------------------------------------------------
   output_power: 8.5dBm
   ap:
@@ -154,17 +154,17 @@ switch:
     sleep_mode:
       id: sleep_mode_sw
       name: Sleep Mode
-      # АЛГОРИТМ БЛОКИРОВКИ: Перехватываем триггер включения сна
+      # INTERLOCK: intercept the sleep turn-on trigger
       on_turn_on:
         then:
           - if:
               condition:
                 switch.is_on: standby_mode_sw
               then:
-                # Если Standby активен - принудительно отключаем Sleep обратно и выходим
+                # If Standby is active, force Sleep back off and stop here
                 - switch.turn_off: sleep_mode_sw
               else:
-                # Стандартное поведение, если Standby выключен
+                # Normal behaviour when Standby is off
                 - switch.turn_off: standby_mode_sw
                 - light.turn_off: {id: backlight_light, transition_length: 1s}
       on_turn_off:
@@ -218,7 +218,7 @@ globals:
     type: bool
     restore_value: false
     initial_value: 'false'
-  # Буфер для хранения точек графика экстракции (до 60 секунд пролива)
+  # Buffer for the extraction graph points (up to 60 seconds of brewing)
   - id: brew_flow_history
     type: float[60]
     restore_value: false
@@ -701,7 +701,7 @@ image:
     transparency: alpha_channel
 
 # ------------------------------------------------------------------
-# ВНЕДРЕНИЕ ЦВЕТНОЙ ПАЛИТРЫ МАГНУСА (RGB565)
+# MAGNUS'S COLOUR PALETTE (RGB565)
 # ------------------------------------------------------------------
 color:
   - id: white
@@ -769,11 +769,11 @@ display:
     pages:
       - id: page_main
         lambda: |-
-          // ГРАФИЧЕСКИЙ ЭКРАН ПРЕДУПРЕЖДЕНИЯ (ТОЛЬКО КРУПНАЯ RGBA ИКОНКА ПО ЦЕНТРУ КРУГА)
+          // GRAPHICAL WARNING SCREEN (ONLY A LARGE RGBA ICON IN THE CENTRE)
           if (id(water_low_sens).state) {
             it.image(160, 90, id(custom_drop_alert), ImageAlign::CENTER);
             
-            // Маленький технический статус WiFi в углу
+            // Small Wi-Fi status readout in the corner
             Color signal = id(my_red);
             if (id(wifi_signal_db).state >= -60) signal = id(my_green);
             else if (id(wifi_signal_db).state >= -67) signal = id(my_yellow);
@@ -781,7 +781,7 @@ display:
             return;
           }
 
-          // КЛАССИЧЕСКИЙ РЕНДЕР (ЕСЛИ С ВОДОЙ ВСЕ В ПОРЯДКЕ)
+          // NORMAL RENDER (WHEN THE WATER LEVEL IS OK)
           Color textColor = id(white);
           if (id(sleep_mode_sw).state) {
             textColor = id(my_gray);
@@ -907,7 +907,7 @@ display:
 
       - id: page_modes
         lambda: |-
-          // СИНХРОНИЗИРОВАННОЕ МЕНЮ ИЗ 4-Х ПУНКТОВ С ШАГОМ СТРОК 28 PX ПО ВЕРТИКАЛИ
+          // 4-ITEM MENU WITH 28 PX VERTICAL ROW SPACING
           it.print(160, 15, id(font12), id(white), TextAlign::TOP_CENTER, "SYSTEM MODES");
           
           // 4 rows, 28 px apart, kept inside the area already in use (rows end ~162)
