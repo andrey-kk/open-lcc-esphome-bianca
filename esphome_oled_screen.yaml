@@ -178,6 +178,28 @@ globals:
     initial_value: 'false'
 
 script:
+  # Wake from Sleep/Standby. The RP2040 can drop a command that arrives while it
+  # is sending its status, so commands are spaced out and re-sent (up to 3 tries)
+  # until the RP2040 reports both Sleep and Standby as OFF.
+  - id: wake_machine
+    mode: restart
+    then:
+      - lambda: 'id(my_oled)->turn_on();'
+      - display.page.show: page_main
+      - repeat:
+          count: 3
+          then:
+            - if:
+                condition:
+                  or:
+                    - switch.is_on: sleep_mode_sw
+                    - switch.is_on: standby_mode_sw
+                    - lambda: 'return id(status).state.find("Sleep") != std::string::npos;'
+                then:
+                  - switch.turn_off: sleep_mode_sw
+                  - delay: 300ms
+                  - switch.turn_off: standby_mode_sw
+                  - delay: 1500ms
   - id: menu_timeout
     mode: restart
     then:
@@ -278,11 +300,7 @@ binary_sensor:
                       std::string s = id(status).state;
                       return s.find("Sleep") != std::string::npos;  // status text is "Sleeping"
               then:
-                # Wake: turn_off always sends the command to the RP2040, even if the switch already shows OFF
-                - switch.turn_off: sleep_mode_sw
-                - switch.turn_off: standby_mode_sw
-                - lambda: 'id(my_oled)->turn_on();'
-                - display.page.show: page_main
+                - script.execute: wake_machine
               else: 
                 - if:
                     condition:
@@ -369,11 +387,7 @@ binary_sensor:
                       std::string s = id(status).state;
                       return s.find("Sleep") != std::string::npos;  // status text is "Sleeping"
               then:
-                # Wake: turn_off always sends the command to the RP2040, even if the switch already shows OFF
-                - switch.turn_off: sleep_mode_sw
-                - switch.turn_off: standby_mode_sw
-                - lambda: 'id(my_oled)->turn_on();'
-                - display.page.show: page_main
+                - script.execute: wake_machine
               else: 
                 - if:
                     condition:
